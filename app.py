@@ -55,7 +55,7 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX: Wechsel auf das stabile Flash-Modell (verhindert Verbindungsfehler)
+# Wir nutzen das stabile Flash Modell
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 # --- SESSION STATE SETUP ---
@@ -66,7 +66,7 @@ if "finished" not in st.session_state:
 if "mode" not in st.session_state:
     st.session_state.mode = None 
 
-# --- HELFERFUNKTIONEN ---
+# --- HELFERFUNKTIONEN (DEBUG MODE) ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
@@ -75,31 +75,33 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
     if json_mode:
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    # Retry-Logik erhöht auf 5 Versuche für Stabilität
-    for delay in [1, 2, 3, 5, 8]:
-        try:
-            response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
-            if response.status_code == 200:
-                result = response.json()
-                if 'candidates' in result:
-                    return result['candidates'][0]['content']['parts'][0]['text']
-            elif response.status_code == 429:
-                time.sleep(delay) # Warten bei Überlastung
-        except Exception:
-            time.sleep(delay)
+    try:
+        # Request senden
+        response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
+        
+        # DEBUGGING: Wir prüfen den Status Code genau
+        if response.status_code == 200:
+            result = response.json()
+            if 'candidates' in result:
+                return result['candidates'][0]['content']['parts'][0]['text']
+            else:
+                return "Google API Fehler: Leere Antwort (Candidates missing)."
+        else:
+            # Hier geben wir den ECHTEN Fehler aus, damit wir ihn sehen
+            return f"SYSTEM ERROR {response.status_code}: {response.text}"
             
-    return "FEHLER: Verbindung instabil. Bitte erneut senden."
+    except Exception as e:
+        return f"CRASH: {str(e)}"
 
 # --- UI HEADER (LOGO FIX) ---
 col1, col2 = st.columns([2, 10])
 with col1:
-    # FIX: Intelligenter Logo-Lader. Wenn lokal nicht da, nimm Online-Bild.
+    # Verbesserter Logo-Check
     if os.path.exists("logo.jpg"):
         st.image("logo.jpg", use_container_width=True)
-    elif os.path.exists("Logo.jpg"): # Check für Großschreibung
+    elif os.path.exists("Logo.jpg"):
         st.image("Logo.jpg", use_container_width=True)
     else:
-        # Fallback URL (Tyrannus Logo von Wix)
         st.image("https://static.wixstatic.com/media/9a8941_e2029560697449669041103545901272~mv2.png", use_container_width=True)
 
 with col2:
@@ -107,7 +109,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.3 (Stable)")
+        st.caption("AI IDENTITY ARCHITECT | V5.4 (DEBUG)")
 
 st.divider()
 
@@ -145,7 +147,7 @@ if st.session_state.mode is None:
 # PHASE 2: DER CHAT
 # ---------------------------------------------------------
 else:
-    # --- NAVIGATION: ZURÜCK BUTTON (Dein Wunsch-Feature) ---
+    # --- NAVIGATION: ZURÜCK BUTTON ---
     col_back, col_space = st.columns([3, 7])
     with col_back:
         if st.button("← Zurück zur Auswahl"):
@@ -200,8 +202,8 @@ else:
                 with st.spinner("Der Architect arbeitet..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
                     
-                    # FIX: Error Handling für den Chat
-                    if response.startswith("FEHLER"):
+                    # Zeige Fehler direkt an, falls vorhanden
+                    if "SYSTEM ERROR" in response or "CRASH" in response:
                         st.error(response)
                     else:
                         st.write(response)
@@ -234,9 +236,8 @@ else:
                 temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
                 dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
                 
-                # FIX: Verhindert Absturz bei API-Fehler
-                if dna_json.startswith("FEHLER"):
-                    st.error("Verbindung unterbrochen. Bitte versuche es noch einmal.")
+                if "SYSTEM ERROR" in dna_json:
+                     st.error(dna_json)
                 else:
                     try:
                         dna = json.loads(dna_json)
@@ -252,4 +253,4 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     except Exception:
-                        st.error("Daten konnten nicht verarbeitet werden. Bitte 'Ergebnisse anzeigen' erneut klicken.")
+                        st.error("Datenfehler (JSON Parsing failed). Bitte erneut versuchen.")
