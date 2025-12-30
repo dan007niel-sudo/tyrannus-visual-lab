@@ -45,9 +45,8 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V5.8: Wir nutzen explizit 'gemini-2.0-flash'.
-# Das hat eigene Limits und umgeht die Sperre des 2.5er Modells.
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+# FIX V6.0: Wir nutzen das Experimental-Modell (oft höhere Limits)
+MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -57,7 +56,16 @@ if "finished" not in st.session_state:
 if "mode" not in st.session_state:
     st.session_state.mode = None 
 
-# --- HELFERFUNKTIONEN (DEBUG MODE) ---
+# --- AUTO-REPAIR FUNCTION ---
+# Löscht Fehlermeldungen aus dem Verlauf, damit man nicht feststeckt
+st.session_state.chat_history = [
+    msg for msg in st.session_state.chat_history 
+    if "SYSTEM ERROR" not in msg['parts'][0]['text'] 
+    and "LIMIT" not in msg['parts'][0]['text']
+    and "CRASH" not in msg['parts'][0]['text']
+]
+
+# --- HELFERFUNKTIONEN ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
@@ -67,18 +75,16 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
     try:
-        # Request senden
         response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
         
-        # DEBUGGING
         if response.status_code == 200:
             result = response.json()
             if 'candidates' in result:
                 return result['candidates'][0]['content']['parts'][0]['text']
             else:
-                return "Google API Fehler: Leere Antwort (Candidates missing)."
+                return "Google API Fehler: Leere Antwort."
         elif response.status_code == 429:
-             return "LIMIT ERREICHT: Bitte kurz warten (ca. 1 Minute)."
+             return "LIMIT: Das Modell ist überlastet. Warte kurz oder starte neu."
         else:
             return f"SYSTEM ERROR {response.status_code}: {response.text}"
             
@@ -100,7 +106,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.8")
+        st.caption("AI IDENTITY ARCHITECT | V6.0 (Exp)")
 
 st.divider()
 
@@ -190,7 +196,7 @@ else:
                     
                     if "SYSTEM ERROR" in response or "CRASH" in response:
                         st.error(response)
-                    elif "LIMIT ERREICHT" in response:
+                    elif "LIMIT" in response:
                         st.warning(response)
                     else:
                         st.write(response)
