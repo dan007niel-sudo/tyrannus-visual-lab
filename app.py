@@ -55,8 +55,8 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# Wir nutzen das stabile Flash Modell
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# FIX V5.5: Wir nutzen den expliziten "latest" Alias. Das löst den 404 Fehler.
+MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -79,7 +79,7 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
         # Request senden
         response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
         
-        # DEBUGGING: Wir prüfen den Status Code genau
+        # DEBUGGING
         if response.status_code == 200:
             result = response.json()
             if 'candidates' in result:
@@ -87,16 +87,15 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
             else:
                 return "Google API Fehler: Leere Antwort (Candidates missing)."
         else:
-            # Hier geben wir den ECHTEN Fehler aus, damit wir ihn sehen
+            # Falls es immer noch nicht geht, sehen wir den neuen Fehler
             return f"SYSTEM ERROR {response.status_code}: {response.text}"
             
     except Exception as e:
         return f"CRASH: {str(e)}"
 
-# --- UI HEADER (LOGO FIX) ---
+# --- UI HEADER ---
 col1, col2 = st.columns([2, 10])
 with col1:
-    # Verbesserter Logo-Check
     if os.path.exists("logo.jpg"):
         st.image("logo.jpg", use_container_width=True)
     elif os.path.exists("Logo.jpg"):
@@ -109,7 +108,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.4 (DEBUG)")
+        st.caption("AI IDENTITY ARCHITECT | V5.5")
 
 st.divider()
 
@@ -202,7 +201,6 @@ else:
                 with st.spinner("Der Architect arbeitet..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
                     
-                    # Zeige Fehler direkt an, falls vorhanden
                     if "SYSTEM ERROR" in response or "CRASH" in response:
                         st.error(response)
                     else:
