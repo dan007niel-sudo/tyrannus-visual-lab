@@ -45,18 +45,19 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V7.0: MODELL-ROTATION (REDUNDANZ)
-# Der Bot probiert diese Liste von oben nach unten durch.
+# FIX V8.0: MIXED FLEET STRATEGY
+# Wir mischen Flash (schnell) mit Pro (stark, eigene Limits).
 AVAILABLE_MODELS = [
-    "gemini-2.0-flash-exp",           # 1. Wahl: Das Super-Modell
-    "gemini-2.0-flash",               # 2. Wahl: Der schnelle Standard
-    "gemini-flash-latest",            # 3. Wahl: Der Evergreen
-    "gemini-1.5-pro-latest"           # 4. Wahl: Der langsame aber stabile Backup
+    "gemini-2.0-flash-lite-preview-02-05", # 1. Versuch: Lite (eigenes Limit)
+    "gemini-1.5-pro",                       # 2. Versuch: PRO (Der "LKW" - separates Limit!)
+    "gemini-2.0-flash-exp",                 # 3. Versuch: Experimental
+    "gemini-2.0-flash",                     # 4. Versuch: Standard Flash
+    "gemini-flash-latest"                   # 5. Versuch: Fallback
 ]
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
 
-# --- SESSION STATE SETUP ---
+# --- SESSION STATE ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "finished" not in st.session_state:
@@ -64,15 +65,13 @@ if "finished" not in st.session_state:
 if "mode" not in st.session_state:
     st.session_state.mode = None 
 
-# --- AUTO-REPAIR FUNCTION ---
+# --- AUTO-REPAIR ---
 st.session_state.chat_history = [
     msg for msg in st.session_state.chat_history 
-    if "SYSTEM ERROR" not in msg['parts'][0]['text'] 
-    and "LIMIT" not in msg['parts'][0]['text']
-    and "CRASH" not in msg['parts'][0]['text']
+    if "SYSTEM" not in msg['parts'][0]['text'] and "LIMIT" not in msg['parts'][0]['text']
 ]
 
-# --- INTELLIGENTE HELFERFUNKTION (AUTO-SWITCHER) ---
+# --- INTELLIGENTE API-FUNKTION (SMART RETRY) ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
@@ -81,60 +80,61 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
     if json_mode:
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    # Wir probieren nacheinander alle Modelle in der Liste
-    last_error = ""
+    error_log = [] # Wir sammeln alle Fehler für die Diagnose
     
     for model_name in AVAILABLE_MODELS:
         try:
             full_url = f"{BASE_URL}{model_name}:generateContent"
-            response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=30)
+            response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=40) # Längeres Timeout für Pro
             
-            # Wenn Erfolg (200) -> Sofort Ergebnis zurückgeben und raus hier
             if response.status_code == 200:
                 result = response.json()
                 if 'candidates' in result:
                     return result['candidates'][0]['content']['parts'][0]['text']
             
-            # Wenn Limit (429) -> Nicht abbrechen, sondern nächstes Modell versuchen!
+            # Fehlerbehandlung
             elif response.status_code == 429:
-                last_error = f"Limit bei {model_name}, wechsle..."
-                continue # Nächster Schleifen-Durchlauf
-                
-            # Wenn nicht gefunden (404) -> Nächstes Modell versuchen
+                error_log.append(f"{model_name}: LIMIT")
+                time.sleep(2) # WICHTIG: 2 Sekunden Pause, damit Google uns nicht blockt
+                continue 
             elif response.status_code == 404:
+                error_log.append(f"{model_name}: 404")
                 continue
-
             else:
-                last_error = f"Error {response.status_code} bei {model_name}"
+                error_log.append(f"{model_name}: {response.status_code}")
+                time.sleep(1)
                 
         except Exception as e:
-            last_error = str(e)
+            error_log.append(f"{model_name}: CRASH")
             continue
             
-    # Wenn wir hier ankommen, haben ALLE Modelle versagt
-    return f"SYSTEM OVERLOAD: Alle Leitungen belegt. Letzter Fehler: {last_error}"
+    # Wenn alle Stricke reißen:
+    return f"SYSTEM OVERLOAD. Protokoll: {', '.join(error_log)}. Bitte 2 Minuten warten."
 
 # --- UI HEADER ---
 col1, col2 = st.columns([2, 10])
 with col1:
-    if os.path.exists("logo.jpg"):
-        st.image("logo.jpg", use_container_width=True)
-    elif os.path.exists("Logo.jpg"):
-        st.image("Logo.jpg", use_container_width=True)
-    else:
-        st.image("https://static.wixstatic.com/media/9a8941_e2029560697449669041103545901272~mv2.png", use_container_width=True)
+    logo_found = False
+    possible_names = ["logo.jpg", "Logo.jpg", "Logo.JPG", "logo.JPG", "logo.png", "Logo.png"]
+    for filename in possible_names:
+        if os.path.exists(filename):
+            st.image(filename, use_container_width=True)
+            logo_found = True
+            break
+    if not logo_found:
+        st.warning("Kein Logo")
 
 with col2:
     st.title("Tyrannus Visual Lab")
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V7.0 (Redundant)")
+        st.caption("AI IDENTITY ARCHITECT | V8.0 (Heavy Lifter)")
 
 st.divider()
 
 # ---------------------------------------------------------
-# PHASE 1: DASHBOARD / AUSWAHL
+# PHASE 1: DASHBOARD
 # ---------------------------------------------------------
 if st.session_state.mode is None:
     st.markdown("""
@@ -152,19 +152,17 @@ if st.session_state.mode is None:
         if st.button("🏛️\nDNA & KULTUR\n(Identität finden)"):
             st.session_state.mode = "IDENTITY_SCAN"
             st.rerun()
-            
     with c2:
         if st.button("🎨\nPROJEKT & DESIGN\n(Flyer / Grafik)"):
             st.session_state.mode = "PROJECT_DESIGN"
             st.rerun()
-            
     with c3:
         if st.button("🧠\nBRAINSTORMING\n(Jahresthema / Ideen)"):
             st.session_state.mode = "BRAINSTORMING"
             st.rerun()
 
 # ---------------------------------------------------------
-# PHASE 2: DER CHAT
+# PHASE 2: CHAT
 # ---------------------------------------------------------
 else:
     col_back, col_space = st.columns([3, 7])
@@ -177,7 +175,6 @@ else:
 
     BASE_INSTRUCTION = f"""Du bist der 'Visual Identity Architect' (Tyrannus Standard).
     AKTUELLER MODUS: {st.session_state.mode}
-    
     REGELN:
     1. Nutze KEINE technischen Fachbegriffe, sondern Metaphern.
     2. Bestätige Antworten kurz ("Verstanden."), wiederhole NICHTS.
@@ -205,24 +202,20 @@ else:
             welcome = "Modus: Projekt-Design.\nWas steht an? Ein Flyer, ein Predigt-Cover oder ein Event-Bild?"
         else:
             welcome = "Modus: Brainstorming.\nLass uns kreativ werden. Wonach suchen wir heute? (Jahresthema, Predigtreihe...)"
-            
         st.session_state.chat_history.append({"role": "model", "parts": [{"text": welcome}]})
         st.rerun()
 
     if not st.session_state.finished:
         if user_input := st.chat_input("Deine Antwort..."):
             st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_input}]})
-            
             with st.chat_message("assistant"):
-                with st.spinner("Der Architect arbeitet (Modell-Check)..."):
+                with st.spinner("Architect sucht freie Leitung..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
-                    
                     if "SYSTEM OVERLOAD" in response:
                         st.error(response)
                     else:
                         st.write(response)
                         st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
-            
             if len(st.session_state.chat_history) >= 9:
                 st.session_state.finished = True
                 st.rerun()
@@ -235,9 +228,8 @@ else:
              st.rerun()
 
         st.success("Konzept finalisiert. Generiere Daten...")
-        
         if st.button("Ergebnisse anzeigen"):
-            with st.spinner("Rendere Prompt für Gemini 3 Pro Image..."):
+            with st.spinner("Rendere Prompt..."):
                 analysis_prompt = """
                 Erstelle ein JSON mit genau zwei Feldern:
                 1. 'human_vision': Eine kraftvolle deutsche Zusammenfassung des Konzepts.
@@ -245,7 +237,6 @@ else:
                    - Natural Language. Photorealistic description.
                    - Beginne mit: "A high resolution image of..."
                 """
-                
                 temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
                 dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
                 
@@ -266,4 +257,4 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     except Exception:
-                        st.error("Datenfehler (JSON Parsing failed). Bitte erneut versuchen.")
+                        st.error("Datenfehler.")
