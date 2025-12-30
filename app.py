@@ -29,6 +29,11 @@ st.markdown("""
         background-color: #A81C1C; border-color: #A81C1C; transform: translateY(-2px);
     }
     
+    /* Kleinerer Style für den Zurück-Button */
+    div[data-testid="stHorizontalBlock"] .stButton>button {
+        background-color: #111; border: 1px solid #444; padding: 5px 10px;
+    }
+    
     /* Input Felder */
     .stTextInput>div>div>input { background-color: #111; color: white; border: 1px solid #222; border-radius: 12px; }
     
@@ -90,7 +95,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.1")
+        st.caption("AI IDENTITY ARCHITECT | V5.2")
 
 st.divider()
 
@@ -129,6 +134,17 @@ if st.session_state.mode is None:
 # PHASE 2: DER CHAT
 # ---------------------------------------------------------
 else:
+    # --- NAVIGATION: ZURÜCK BUTTON ---
+    # Dieser Button erscheint nur, wenn man in einem Modus ist.
+    col_back, col_space = st.columns([3, 7])
+    with col_back:
+        if st.button("← Zurück zur Auswahl"):
+            # Reset Logik
+            st.session_state.mode = None
+            st.session_state.chat_history = []
+            st.session_state.finished = False
+            st.rerun()
+
     # --- DYNAMISCHER SYSTEM PROMPT ---
     BASE_INSTRUCTION = f"""Du bist der 'Visual Identity Architect' (Tyrannus Standard).
     AKTUELLER MODUS: {st.session_state.mode}
@@ -165,7 +181,6 @@ else:
 
     # --- INITIAL MESSAGE (Startet automatisch nach Button-Klick) ---
     if not st.session_state.chat_history:
-        # Hier sind deine bevorzugten "weicheren" Begrüßungen
         if st.session_state.mode == "IDENTITY_SCAN":
             welcome = "Modus: DNA-Analyse.\nLass uns den Kern deiner Gemeinde finden. Beschreibe mir kurz eure Gemeinschaft."
         elif st.session_state.mode == "PROJECT_DESIGN":
@@ -193,8 +208,8 @@ else:
 
     # --- OUTPUT GENERATOR ---
     if st.session_state.finished:
-        # Reset Button
-        if st.button("← Zurück zum Hauptmenü"):
+        # Reset Button (Am Ende, falls man von hier direkt zurück will)
+        if st.button("Neues Projekt starten"):
              st.session_state.chat_history = []
              st.session_state.finished = False
              st.session_state.mode = None
