@@ -31,7 +31,7 @@ st.markdown("""
     
     /* Kleinerer Style für den Zurück-Button */
     div[data-testid="stHorizontalBlock"] .stButton>button {
-        background-color: #111; border: 1px solid #444; padding: 5px 10px;
+        background-color: #111; border: 1px solid #444; padding: 5px 10px; font-size: 0.8em;
     }
     
     /* Input Felder */
@@ -55,7 +55,8 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
+# FIX: Wechsel auf das stabile Flash-Modell (verhindert Verbindungsfehler)
+MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -74,28 +75,39 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
     if json_mode:
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    for delay in [1, 2, 4]:
+    # Retry-Logik erhöht auf 5 Versuche für Stabilität
+    for delay in [1, 2, 3, 5, 8]:
         try:
             response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
             if response.status_code == 200:
                 result = response.json()
                 if 'candidates' in result:
                     return result['candidates'][0]['content']['parts'][0]['text']
+            elif response.status_code == 429:
+                time.sleep(delay) # Warten bei Überlastung
         except Exception:
             time.sleep(delay)
-    return "Fehler: Keine Verbindung zum Architect."
+            
+    return "FEHLER: Verbindung instabil. Bitte erneut senden."
 
-# --- UI HEADER ---
+# --- UI HEADER (LOGO FIX) ---
 col1, col2 = st.columns([2, 10])
 with col1:
+    # FIX: Intelligenter Logo-Lader. Wenn lokal nicht da, nimm Online-Bild.
     if os.path.exists("logo.jpg"):
         st.image("logo.jpg", use_container_width=True)
+    elif os.path.exists("Logo.jpg"): # Check für Großschreibung
+        st.image("Logo.jpg", use_container_width=True)
+    else:
+        # Fallback URL (Tyrannus Logo von Wix)
+        st.image("https://static.wixstatic.com/media/9a8941_e2029560697449669041103545901272~mv2.png", use_container_width=True)
+
 with col2:
     st.title("Tyrannus Visual Lab")
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.2")
+        st.caption("AI IDENTITY ARCHITECT | V5.3 (Stable)")
 
 st.divider()
 
@@ -103,7 +115,6 @@ st.divider()
 # PHASE 1: DASHBOARD / AUSWAHL
 # ---------------------------------------------------------
 if st.session_state.mode is None:
-    # --- NEUER BEGRÜßUNGSTEXT VOR DEN BUTTONS ---
     st.markdown("""
     <div class="intro-text">
     Willkommen im Visual Lab.<br>
@@ -134,12 +145,10 @@ if st.session_state.mode is None:
 # PHASE 2: DER CHAT
 # ---------------------------------------------------------
 else:
-    # --- NAVIGATION: ZURÜCK BUTTON ---
-    # Dieser Button erscheint nur, wenn man in einem Modus ist.
+    # --- NAVIGATION: ZURÜCK BUTTON (Dein Wunsch-Feature) ---
     col_back, col_space = st.columns([3, 7])
     with col_back:
         if st.button("← Zurück zur Auswahl"):
-            # Reset Logik
             st.session_state.mode = None
             st.session_state.chat_history = []
             st.session_state.finished = False
@@ -156,30 +165,21 @@ else:
     """
     
     if st.session_state.mode == "IDENTITY_SCAN":
-        SPECIFIC_INSTRUCTION = """
-        ZIEL: Erfasse die tiefe geistliche DNA der Gemeinde.
-        FRAGEN: Frage nach dem Gefühl beim Eintreten, dem 'Herzschlag' und dem Vergleich zu anderen Orten (z.B. Wohnzimmer vs. Kathedrale).
-        """
+        SPECIFIC_INSTRUCTION = "ZIEL: Erfasse die tiefe geistliche DNA der Gemeinde. Frage nach Gefühlen und Vergleichen."
     elif st.session_state.mode == "PROJECT_DESIGN":
-        SPECIFIC_INSTRUCTION = """
-        ZIEL: Entwickle ein visuelles Konzept für ein KONKRETES Projekt (Flyer, Plakat, Social Media).
-        FRAGEN: Frage nach dem Thema, der Zielgruppe und der gewünschten Stimmung für DIESES EINE Bild.
-        """
+        SPECIFIC_INSTRUCTION = "ZIEL: Konzept für ein KONKRETES Projekt (Flyer, Plakat). Frage nach Thema, Zielgruppe, Stimmung."
     elif st.session_state.mode == "BRAINSTORMING":
-        SPECIFIC_INSTRUCTION = """
-        ZIEL: Hilf beim Finden eines Jahresthemas oder einer kreativen Richtung.
-        FRAGEN: Frage nach den Zielen für das Jahr, der aktuellen Stimmung und biblischen Bildern, die präsent sind.
-        """
+        SPECIFIC_INSTRUCTION = "ZIEL: Brainstorming für Jahresthema/Ideen. Frage nach Zielen und biblischen Bildern."
     
     FULL_SYSTEM_PROMPT = BASE_INSTRUCTION + SPECIFIC_INSTRUCTION
 
-    # --- CHAT LOOP ---
+    # --- CHAT DISPLAY ---
     for msg in st.session_state.chat_history:
         role = "assistant" if msg["role"] == "model" else "user"
         with st.chat_message(role):
             st.write(msg["parts"][0]["text"])
 
-    # --- INITIAL MESSAGE (Startet automatisch nach Button-Klick) ---
+    # --- INITIAL MESSAGE ---
     if not st.session_state.chat_history:
         if st.session_state.mode == "IDENTITY_SCAN":
             welcome = "Modus: DNA-Analyse.\nLass uns den Kern deiner Gemeinde finden. Beschreibe mir kurz eure Gemeinschaft."
@@ -199,8 +199,13 @@ else:
             with st.chat_message("assistant"):
                 with st.spinner("Der Architect arbeitet..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
-                    st.write(response)
-                    st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
+                    
+                    # FIX: Error Handling für den Chat
+                    if response.startswith("FEHLER"):
+                        st.error(response)
+                    else:
+                        st.write(response)
+                        st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
             
             if len(st.session_state.chat_history) >= 9:
                 st.session_state.finished = True
@@ -208,7 +213,6 @@ else:
 
     # --- OUTPUT GENERATOR ---
     if st.session_state.finished:
-        # Reset Button (Am Ende, falls man von hier direkt zurück will)
         if st.button("Neues Projekt starten"):
              st.session_state.chat_history = []
              st.session_state.finished = False
@@ -223,25 +227,29 @@ else:
                 Erstelle ein JSON mit genau zwei Feldern:
                 1. 'human_vision': Eine kraftvolle deutsche Zusammenfassung des Konzepts.
                 2. 'ai_prompt': Ein perfekter englischer Bild-Prompt für 'Gemini 3 Pro Image'. 
-                   - Natural Language. Photorealistic description. No technical parameters.
+                   - Natural Language. Photorealistic description.
                    - Beginne mit: "A high resolution image of..."
                 """
                 
                 temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
                 dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
                 
-                try:
-                    dna = json.loads(dna_json)
-                    st.markdown(f"""
-                    <div class="dna-box">
-                        <p class="label">VISION / KONZEPT</p>
-                        <div class="human-vision">"{dna.get('human_vision', 'Processing...')}"</div>
-                        <br><hr style="border-color:#333"><br>
-                        <p class="label">GEMINI 3 PRO IMAGE PROMPT</p>
-                        <code style="background-color:#111; color:#0f0; display:block; padding:15px; white-space: pre-wrap;">
+                # FIX: Verhindert Absturz bei API-Fehler
+                if dna_json.startswith("FEHLER"):
+                    st.error("Verbindung unterbrochen. Bitte versuche es noch einmal.")
+                else:
+                    try:
+                        dna = json.loads(dna_json)
+                        st.markdown(f"""
+                        <div class="dna-box">
+                            <p class="label">VISION / KONZEPT</p>
+                            <div class="human-vision">"{dna.get('human_vision', 'Processing...')}"</div>
+                            <br><hr style="border-color:#333"><br>
+                            <p class="label">GEMINI 3 PRO IMAGE PROMPT</p>
+                            <code style="background-color:#111; color:#0f0; display:block; padding:15px; white-space: pre-wrap;">
 {dna.get('ai_prompt', 'Generating prompt...')}
-                        </code>
-                    </div>
-                    """, unsafe_allow_html=True)
-                except Exception:
-                    st.error("Fehler bei der Datenverarbeitung.")
+                            </code>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    except Exception:
+                        st.error("Daten konnten nicht verarbeitet werden. Bitte 'Ergebnisse anzeigen' erneut klicken.")
