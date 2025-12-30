@@ -15,11 +15,7 @@ st.set_page_config(
 st.markdown("""
     <style>
     .stApp { background-color: #050505; color: #f0f0f0; }
-    
-    /* Intro Text Styling */
     .intro-text { font-size: 1.1em; color: #ccc; margin-bottom: 30px; line-height: 1.5; }
-    
-    /* Button Styling */
     .stButton>button { 
         background-color: #1a1a1a; color: white; border-radius: 12px; 
         border: 1px solid #333; padding: 20px 10px; font-weight: bold; width: 100%;
@@ -28,16 +24,10 @@ st.markdown("""
     .stButton>button:hover { 
         background-color: #A81C1C; border-color: #A81C1C; transform: translateY(-2px);
     }
-    
-    /* Kleinerer Style für den Zurück-Button */
     div[data-testid="stHorizontalBlock"] .stButton>button {
         background-color: #111; border: 1px solid #444; padding: 5px 10px; font-size: 0.8em;
     }
-    
-    /* Input Felder */
     .stTextInput>div>div>input { background-color: #111; color: white; border: 1px solid #222; border-radius: 12px; }
-    
-    /* DNA Box Style */
     .dna-box { 
         background-color: #0A0A0A; border-left: 5px solid #A81C1C; 
         padding: 25px; border-radius: 0 15px 15px 0; margin: 20px 0;
@@ -55,8 +45,8 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V5.5: Wir nutzen den expliziten "latest" Alias. Das löst den 404 Fehler.
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
+# FIX V5.7: Wir nutzen 'gemini-flash-latest' (ohne 1.5), wie beim Technik-Bot erfolgreich getestet.
+MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -87,7 +77,6 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
             else:
                 return "Google API Fehler: Leere Antwort (Candidates missing)."
         else:
-            # Falls es immer noch nicht geht, sehen wir den neuen Fehler
             return f"SYSTEM ERROR {response.status_code}: {response.text}"
             
     except Exception as e:
@@ -108,7 +97,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.5")
+        st.caption("AI IDENTITY ARCHITECT | V5.7")
 
 st.divider()
 
@@ -146,7 +135,6 @@ if st.session_state.mode is None:
 # PHASE 2: DER CHAT
 # ---------------------------------------------------------
 else:
-    # --- NAVIGATION: ZURÜCK BUTTON ---
     col_back, col_space = st.columns([3, 7])
     with col_back:
         if st.button("← Zurück zur Auswahl"):
@@ -155,7 +143,6 @@ else:
             st.session_state.finished = False
             st.rerun()
 
-    # --- DYNAMISCHER SYSTEM PROMPT ---
     BASE_INSTRUCTION = f"""Du bist der 'Visual Identity Architect' (Tyrannus Standard).
     AKTUELLER MODUS: {st.session_state.mode}
     
@@ -174,13 +161,11 @@ else:
     
     FULL_SYSTEM_PROMPT = BASE_INSTRUCTION + SPECIFIC_INSTRUCTION
 
-    # --- CHAT DISPLAY ---
     for msg in st.session_state.chat_history:
         role = "assistant" if msg["role"] == "model" else "user"
         with st.chat_message(role):
             st.write(msg["parts"][0]["text"])
 
-    # --- INITIAL MESSAGE ---
     if not st.session_state.chat_history:
         if st.session_state.mode == "IDENTITY_SCAN":
             welcome = "Modus: DNA-Analyse.\nLass uns den Kern deiner Gemeinde finden. Beschreibe mir kurz eure Gemeinschaft."
@@ -192,7 +177,6 @@ else:
         st.session_state.chat_history.append({"role": "model", "parts": [{"text": welcome}]})
         st.rerun()
 
-    # --- INPUT ---
     if not st.session_state.finished:
         if user_input := st.chat_input("Deine Antwort..."):
             st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_input}]})
@@ -211,7 +195,6 @@ else:
                 st.session_state.finished = True
                 st.rerun()
 
-    # --- OUTPUT GENERATOR ---
     if st.session_state.finished:
         if st.button("Neues Projekt starten"):
              st.session_state.chat_history = []
