@@ -45,8 +45,16 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V6.0: Wir nutzen das Experimental-Modell (oft höhere Limits)
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+# FIX V7.0: MODELL-ROTATION (REDUNDANZ)
+# Der Bot probiert diese Liste von oben nach unten durch.
+AVAILABLE_MODELS = [
+    "gemini-2.0-flash-exp",           # 1. Wahl: Das Super-Modell
+    "gemini-2.0-flash",               # 2. Wahl: Der schnelle Standard
+    "gemini-flash-latest",            # 3. Wahl: Der Evergreen
+    "gemini-1.5-pro-latest"           # 4. Wahl: Der langsame aber stabile Backup
+]
+
+BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -57,7 +65,6 @@ if "mode" not in st.session_state:
     st.session_state.mode = None 
 
 # --- AUTO-REPAIR FUNCTION ---
-# Löscht Fehlermeldungen aus dem Verlauf, damit man nicht feststeckt
 st.session_state.chat_history = [
     msg for msg in st.session_state.chat_history 
     if "SYSTEM ERROR" not in msg['parts'][0]['text'] 
@@ -65,7 +72,7 @@ st.session_state.chat_history = [
     and "CRASH" not in msg['parts'][0]['text']
 ]
 
-# --- HELFERFUNKTIONEN ---
+# --- INTELLIGENTE HELFERFUNKTION (AUTO-SWITCHER) ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
@@ -74,22 +81,38 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
     if json_mode:
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    try:
-        response = requests.post(f"{MODEL_URL}?key={API_KEY}", json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if 'candidates' in result:
-                return result['candidates'][0]['content']['parts'][0]['text']
-            else:
-                return "Google API Fehler: Leere Antwort."
-        elif response.status_code == 429:
-             return "LIMIT: Das Modell ist überlastet. Warte kurz oder starte neu."
-        else:
-            return f"SYSTEM ERROR {response.status_code}: {response.text}"
+    # Wir probieren nacheinander alle Modelle in der Liste
+    last_error = ""
+    
+    for model_name in AVAILABLE_MODELS:
+        try:
+            full_url = f"{BASE_URL}{model_name}:generateContent"
+            response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=30)
             
-    except Exception as e:
-        return f"CRASH: {str(e)}"
+            # Wenn Erfolg (200) -> Sofort Ergebnis zurückgeben und raus hier
+            if response.status_code == 200:
+                result = response.json()
+                if 'candidates' in result:
+                    return result['candidates'][0]['content']['parts'][0]['text']
+            
+            # Wenn Limit (429) -> Nicht abbrechen, sondern nächstes Modell versuchen!
+            elif response.status_code == 429:
+                last_error = f"Limit bei {model_name}, wechsle..."
+                continue # Nächster Schleifen-Durchlauf
+                
+            # Wenn nicht gefunden (404) -> Nächstes Modell versuchen
+            elif response.status_code == 404:
+                continue
+
+            else:
+                last_error = f"Error {response.status_code} bei {model_name}"
+                
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    # Wenn wir hier ankommen, haben ALLE Modelle versagt
+    return f"SYSTEM OVERLOAD: Alle Leitungen belegt. Letzter Fehler: {last_error}"
 
 # --- UI HEADER ---
 col1, col2 = st.columns([2, 10])
@@ -106,7 +129,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V6.0 (Exp)")
+        st.caption("AI IDENTITY ARCHITECT | V7.0 (Redundant)")
 
 st.divider()
 
@@ -191,13 +214,11 @@ else:
             st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_input}]})
             
             with st.chat_message("assistant"):
-                with st.spinner("Der Architect arbeitet..."):
+                with st.spinner("Der Architect arbeitet (Modell-Check)..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
                     
-                    if "SYSTEM ERROR" in response or "CRASH" in response:
+                    if "SYSTEM OVERLOAD" in response:
                         st.error(response)
-                    elif "LIMIT" in response:
-                        st.warning(response)
                     else:
                         st.write(response)
                         st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
@@ -228,7 +249,7 @@ else:
                 temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
                 dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
                 
-                if "SYSTEM ERROR" in dna_json or "LIMIT" in dna_json:
+                if "SYSTEM OVERLOAD" in dna_json:
                      st.error(dna_json)
                 else:
                     try:
