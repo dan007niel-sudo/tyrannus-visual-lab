@@ -40,12 +40,16 @@ else:
 # Modell-Endpunkt (Flash Preview)
 MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent"
 
-SYSTEM_PROMPT = """Du bist der 'Lead Visual Identity Architect' für die Schule von Tyrannus. 
-Deine Aufgabe ist es, Gemeinden dabei zu helfen, ihre visuelle Identität zu finden.
-Führe ein kurzes, tiefgründiges Interview (max. 4-5 Fragen). 
-Antworte immer professionell, geistlich inspiriert und ermutigend.
-Vermeide technischen Jargon gegenüber dem Nutzer.
-Wenn du genug Informationen hast, beende das Gespräch freundlich."""
+# --- SYSTEM PROMPT (OPTIMIERT) ---
+SYSTEM_PROMPT = """Du bist der 'Visual Identity Architect' (Tyrannus Standard).
+DEINE MISSION: Erstelle effizient ein visuelles Profil (Style-DNA).
+REGELN:
+1. KEIN Smalltalk zu Beginn, keine Begrüßungsfloskeln, kein "Das klingt super".
+2. Sei präzise, analytisch, direkt und knapp.
+3. Stelle immer nur EINE gezielte Frage pro Turn (Fokus: Licht, Textur, Architektur, Farben).
+4. Maximal 2 kurze Sätze pro Antwort.
+5. WICHTIG: Wenn du 4 Kern-Parameter gesammelt hast, bedanke dich kurz für die Zusammenarbeit und beende das Interview.
+"""
 
 # --- HELFERFUNKTIONEN ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
@@ -97,12 +101,13 @@ if "finished" not in st.session_state:
     st.session_state.finished = False
 
 # --- UI HEADER ---
-col1, col2 = st.columns([1, 5])
+col1, col2 = st.columns([2, 10]) # Spalte 1 breiter für das Logo
 with col1:
-    st.image("https://static.wixstatic.com/media/9a8941_e2029560697449669041103545901272~mv2.png", width=80)
+    # Stellt sicher, dass das Logo 'logo.jpg' im Repository liegt
+    st.image("logo.jpg", use_container_width=True)
 with col2:
     st.title("Tyrannus Visual Lab")
-    st.caption("AI IDENTITY ARCHITECT | VERSION 3.0")
+    st.markdown("**AI IDENTITY ARCHITECT** | V3.1")
 
 st.divider()
 
@@ -112,9 +117,10 @@ for msg in st.session_state.chat_history:
     with st.chat_message(role):
         st.write(msg["parts"][0]["text"])
 
-# Erstkontakt (Trigger)
+# --- ERSTKONTAKT (TRIGGER) ---
 if not st.session_state.chat_history:
-    initial_msg = "Willkommen im Lab. Erzähl mir von deiner Gemeinde oder deinem nächsten Projekt – welche Atmosphäre soll das Design ausstrahlen?"
+    # Deine gewählte Begrüßung
+    initial_msg = "Willkommen im Visual Lab. Welches Projekt soll heute visuell definiert werden?"
     st.session_state.chat_history.append({"role": "model", "parts": [{"text": initial_msg}]})
     st.rerun()
 
