@@ -45,14 +45,13 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V8.0: MIXED FLEET STRATEGY
-# Wir mischen Flash (schnell) mit Pro (stark, eigene Limits).
+# FIX V8.1: Korrigierter Name für das PRO-Modell
 AVAILABLE_MODELS = [
-    "gemini-2.0-flash-lite-preview-02-05", # 1. Versuch: Lite (eigenes Limit)
-    "gemini-1.5-pro",                       # 2. Versuch: PRO (Der "LKW" - separates Limit!)
-    "gemini-2.0-flash-exp",                 # 3. Versuch: Experimental
-    "gemini-2.0-flash",                     # 4. Versuch: Standard Flash
-    "gemini-flash-latest"                   # 5. Versuch: Fallback
+    "gemini-1.5-pro-latest",                # PRIORITY 1: Der "LKW" (Name korrigiert!)
+    "gemini-2.0-flash-lite-preview-02-05", # PRIORITY 2: Lite
+    "gemini-2.0-flash-exp",                 # PRIORITY 3: Experimental
+    "gemini-2.0-flash",                     # PRIORITY 4: Standard Flash
+    "gemini-flash-latest"                   # PRIORITY 5: Fallback
 ]
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -71,7 +70,7 @@ st.session_state.chat_history = [
     if "SYSTEM" not in msg['parts'][0]['text'] and "LIMIT" not in msg['parts'][0]['text']
 ]
 
-# --- INTELLIGENTE API-FUNKTION (SMART RETRY) ---
+# --- INTELLIGENTE API-FUNKTION ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
@@ -80,22 +79,21 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
     if json_mode:
         payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    error_log = [] # Wir sammeln alle Fehler für die Diagnose
+    error_log = []
     
     for model_name in AVAILABLE_MODELS:
         try:
             full_url = f"{BASE_URL}{model_name}:generateContent"
-            response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=40) # Längeres Timeout für Pro
+            response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=40)
             
             if response.status_code == 200:
                 result = response.json()
                 if 'candidates' in result:
                     return result['candidates'][0]['content']['parts'][0]['text']
             
-            # Fehlerbehandlung
             elif response.status_code == 429:
                 error_log.append(f"{model_name}: LIMIT")
-                time.sleep(2) # WICHTIG: 2 Sekunden Pause, damit Google uns nicht blockt
+                time.sleep(1) 
                 continue 
             elif response.status_code == 404:
                 error_log.append(f"{model_name}: 404")
@@ -108,8 +106,7 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
             error_log.append(f"{model_name}: CRASH")
             continue
             
-    # Wenn alle Stricke reißen:
-    return f"SYSTEM OVERLOAD. Protokoll: {', '.join(error_log)}. Bitte 2 Minuten warten."
+    return f"SYSTEM OVERLOAD. Protokoll: {', '.join(error_log)}. \n\nEMPFEHLUNG: Tageslimit erreicht. Bitte bis morgen warten."
 
 # --- UI HEADER ---
 col1, col2 = st.columns([2, 10])
@@ -129,7 +126,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V8.0 (Heavy Lifter)")
+        st.caption("AI IDENTITY ARCHITECT | V8.1")
 
 st.divider()
 
