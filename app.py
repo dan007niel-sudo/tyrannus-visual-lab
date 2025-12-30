@@ -45,8 +45,9 @@ else:
     st.error("CRITICAL ERROR: API-Key nicht gefunden.")
     st.stop()
 
-# FIX V5.7: Wir nutzen 'gemini-flash-latest' (ohne 1.5), wie beim Technik-Bot erfolgreich getestet.
-MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+# FIX V5.8: Wir nutzen explizit 'gemini-2.0-flash'.
+# Das hat eigene Limits und umgeht die Sperre des 2.5er Modells.
+MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 # --- SESSION STATE SETUP ---
 if "chat_history" not in st.session_state:
@@ -76,6 +77,8 @@ def call_gemini(messages, system_instruction=None, json_mode=False):
                 return result['candidates'][0]['content']['parts'][0]['text']
             else:
                 return "Google API Fehler: Leere Antwort (Candidates missing)."
+        elif response.status_code == 429:
+             return "LIMIT ERREICHT: Bitte kurz warten (ca. 1 Minute)."
         else:
             return f"SYSTEM ERROR {response.status_code}: {response.text}"
             
@@ -97,7 +100,7 @@ with col2:
     if st.session_state.mode:
         st.caption(f"MODUS: {st.session_state.mode}")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V5.7")
+        st.caption("AI IDENTITY ARCHITECT | V5.8")
 
 st.divider()
 
@@ -187,6 +190,8 @@ else:
                     
                     if "SYSTEM ERROR" in response or "CRASH" in response:
                         st.error(response)
+                    elif "LIMIT ERREICHT" in response:
+                        st.warning(response)
                     else:
                         st.write(response)
                         st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
@@ -217,7 +222,7 @@ else:
                 temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
                 dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
                 
-                if "SYSTEM ERROR" in dna_json:
+                if "SYSTEM ERROR" in dna_json or "LIMIT" in dna_json:
                      st.error(dna_json)
                 else:
                     try:
