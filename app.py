@@ -11,30 +11,56 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom CSS
+# --- NEUES DESIGN: CLEAN & MODERN (Tyrannus Style) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #050505; color: #f0f0f0; }
-    .intro-text { font-size: 1.1em; color: #ccc; margin-bottom: 30px; line-height: 1.5; }
+    /* BASIS: Schwarz & Weiss */
+    .stApp { background-color: #050505; color: #f0f0f0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    
+    /* INPUT FELDER: Clean Dark */
+    .stTextInput>div>div>input { 
+        background-color: #111; color: white; border: 1px solid #333; border-radius: 4px; 
+    }
+    .stTextInput>div>div>input:focus { border-color: #A81C1C; }
+
+    /* BUTTONS: Minimalistisch & Stark */
     .stButton>button { 
-        background-color: #1a1a1a; color: white; border-radius: 12px; 
-        border: 1px solid #333; padding: 20px 10px; font-weight: bold; width: 100%;
-        transition: all 0.3s ease;
+        background-color: #0A0A0A; color: #ccc; border-radius: 4px; 
+        border: 1px solid #333; padding: 15px 10px; font-weight: 500; letter-spacing: 1px; width: 100%;
+        transition: all 0.3s ease; text-transform: uppercase; font-size: 0.85em;
     }
     .stButton>button:hover { 
-        background-color: #A81C1C; border-color: #A81C1C; transform: translateY(-2px);
+        background-color: #A81C1C; color: white; border-color: #A81C1C; transform: translateY(-1px);
     }
+    
+    /* KLEINE BUTTONS (Navigation) */
     div[data-testid="stHorizontalBlock"] .stButton>button {
-        background-color: #111; border: 1px solid #444; padding: 5px 10px; font-size: 0.8em;
+        background-color: transparent; border: none; text-align: left; padding: 0; color: #666;
     }
-    .stTextInput>div>div>input { background-color: #111; color: white; border: 1px solid #222; border-radius: 12px; }
+    div[data-testid="stHorizontalBlock"] .stButton>button:hover {
+        color: #A81C1C; background-color: transparent; transform: none;
+    }
+
+    /* ERGEBNIS BOX: Clean & Hochwertig (Kein Hacker-Grün mehr) */
     .dna-box { 
-        background-color: #0A0A0A; border-left: 5px solid #A81C1C; 
-        padding: 25px; border-radius: 0 15px 15px 0; margin: 20px 0;
-        font-family: 'Courier New', monospace;
+        background-color: #0F0F0F; border-left: 3px solid #A81C1C; 
+        padding: 30px; margin: 30px 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
     }
-    .human-vision { font-family: sans-serif; font-size: 1.1em; line-height: 1.6; color: #e0e0e0; margin-bottom: 20px; }
-    .label { color: #A81C1C; font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+    .human-vision { 
+        font-family: 'Helvetica Neue', sans-serif; font-size: 1.05em; line-height: 1.6; color: #ddd; margin-bottom: 25px; 
+        font-weight: 300;
+    }
+    .label { 
+        color: #A81C1C; font-size: 0.7em; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-bottom: 10px; display: block;
+    }
+    .prompt-code {
+        font-family: 'Courier New', monospace; font-size: 0.9em; color: #bbb; /* Helles Grau statt Grün */
+        background-color: #080808; padding: 20px; border: 1px solid #222; display: block; white-space: pre-wrap;
+    }
+    
+    /* FEHLER & INFO BOXEN ANPASSEN (Weg von Standard-Farben) */
+    .stAlert { background-color: #111; color: #ccc; border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,119 +68,81 @@ st.markdown("""
 if "GEMINI_API_KEY" in st.secrets:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
-    st.error("CRITICAL ERROR: API-Key nicht gefunden.")
+    st.error("Setup: API-Key fehlt.")
     st.stop()
 
-# FIX V8.1: Korrigierter Name für das PRO-Modell
+# MODELL-LISTE
 AVAILABLE_MODELS = [
-    "gemini-1.5-pro-latest",                # PRIORITY 1: Der "LKW" (Name korrigiert!)
-    "gemini-2.0-flash-lite-preview-02-05", # PRIORITY 2: Lite
-    "gemini-2.0-flash-exp",                 # PRIORITY 3: Experimental
-    "gemini-2.0-flash",                     # PRIORITY 4: Standard Flash
-    "gemini-flash-latest"                   # PRIORITY 5: Fallback
+    "gemini-1.5-pro-latest", "gemini-2.0-flash-lite-preview-02-05", "gemini-2.0-flash-exp", "gemini-2.0-flash", "gemini-flash-latest"
 ]
-
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
 
-# --- SESSION STATE ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "finished" not in st.session_state:
-    st.session_state.finished = False
-if "mode" not in st.session_state:
-    st.session_state.mode = None 
+# --- STATE ---
+if "chat_history" not in st.session_state: st.session_state.chat_history = []
+if "finished" not in st.session_state: st.session_state.finished = False
+if "mode" not in st.session_state: st.session_state.mode = None 
 
-# --- AUTO-REPAIR ---
-st.session_state.chat_history = [
-    msg for msg in st.session_state.chat_history 
-    if "SYSTEM" not in msg['parts'][0]['text'] and "LIMIT" not in msg['parts'][0]['text']
-]
-
-# --- INTELLIGENTE API-FUNKTION ---
+# --- FUNCTION ---
 def call_gemini(messages, system_instruction=None, json_mode=False):
     payload = {
         "contents": messages,
         "systemInstruction": {"parts": [{"text": system_instruction}]} if system_instruction else None
     }
-    if json_mode:
-        payload["generationConfig"] = {"responseMimeType": "application/json"}
+    if json_mode: payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-    error_log = []
-    
     for model_name in AVAILABLE_MODELS:
         try:
             full_url = f"{BASE_URL}{model_name}:generateContent"
             response = requests.post(f"{full_url}?key={API_KEY}", json=payload, timeout=40)
-            
             if response.status_code == 200:
                 result = response.json()
-                if 'candidates' in result:
-                    return result['candidates'][0]['content']['parts'][0]['text']
-            
+                if 'candidates' in result: return result['candidates'][0]['content']['parts'][0]['text']
             elif response.status_code == 429:
-                error_log.append(f"{model_name}: LIMIT")
-                time.sleep(1) 
-                continue 
-            elif response.status_code == 404:
-                error_log.append(f"{model_name}: 404")
-                continue
+                time.sleep(1); continue 
             else:
-                error_log.append(f"{model_name}: {response.status_code}")
                 time.sleep(1)
-                
-        except Exception as e:
-            error_log.append(f"{model_name}: CRASH")
-            continue
-            
-    return f"SYSTEM OVERLOAD. Protokoll: {', '.join(error_log)}. \n\nEMPFEHLUNG: Tageslimit erreicht. Bitte bis morgen warten."
+        except Exception: continue
+    return "Verbindung fehlgeschlagen. Bitte neu laden."
 
 # --- UI HEADER ---
 col1, col2 = st.columns([2, 10])
 with col1:
-    logo_found = False
     possible_names = ["logo.jpg", "Logo.jpg", "Logo.JPG", "logo.JPG", "logo.png", "Logo.png"]
     for filename in possible_names:
         if os.path.exists(filename):
             st.image(filename, use_container_width=True)
-            logo_found = True
             break
-    if not logo_found:
-        st.warning("Kein Logo")
 
 with col2:
-    st.title("Tyrannus Visual Lab")
+    st.markdown("<h1 style='font-weight:300; letter-spacing:1px; margin-bottom:0;'>TYRANNUS VISUAL LAB</h1>", unsafe_allow_html=True)
     if st.session_state.mode:
-        st.caption(f"MODUS: {st.session_state.mode}")
+        st.caption(f"MODUS: {st.session_state.mode} | V8.3 CLEAN")
     else:
-        st.caption("AI IDENTITY ARCHITECT | V8.1")
+        st.caption("AI IDENTITY ARCHITECT | V8.3")
 
-st.divider()
+st.markdown("<hr style='border: 1px solid #222; margin-top:0;'>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # PHASE 1: DASHBOARD
 # ---------------------------------------------------------
 if st.session_state.mode is None:
     st.markdown("""
-    <div class="intro-text">
-    Willkommen im Visual Lab.<br>
-    Dies ist dein visueller Sparringspartner. Egal ob du die <b>tiefgreifende DNA</b> deiner Gemeinde entschlüsseln willst oder nur einen <b>konkreten Impuls</b> für das nächste Projekt brauchst – der Architect führt dich zum Ziel.
-    <br><br>
-    <b>Wähle deine Mission:</b>
+    <div style="text-align:center; padding: 40px 0; color: #888;">
+    Wähle den Fokus für das heutige Design-Konzept.
     </div>
     """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
-    
     with c1:
-        if st.button("🏛️\nDNA & KULTUR\n(Identität finden)"):
+        if st.button("DNA & KULTUR"):
             st.session_state.mode = "IDENTITY_SCAN"
             st.rerun()
     with c2:
-        if st.button("🎨\nPROJEKT & DESIGN\n(Flyer / Grafik)"):
+        if st.button("PROJEKT DESIGN"):
             st.session_state.mode = "PROJECT_DESIGN"
             st.rerun()
     with c3:
-        if st.button("🧠\nBRAINSTORMING\n(Jahresthema / Ideen)"):
+        if st.button("BRAINSTORMING"):
             st.session_state.mode = "BRAINSTORMING"
             st.rerun()
 
@@ -164,94 +152,101 @@ if st.session_state.mode is None:
 else:
     col_back, col_space = st.columns([3, 7])
     with col_back:
-        if st.button("← Zurück zur Auswahl"):
+        if st.button("← ZURÜCK"):
             st.session_state.mode = None
             st.session_state.chat_history = []
             st.session_state.finished = False
             st.rerun()
 
-    BASE_INSTRUCTION = f"""Du bist der 'Visual Identity Architect' (Tyrannus Standard).
+    # SYSTEM PROMPTS (CLEAN AGENCY STYLE)
+    BASE_INSTRUCTION = f"""
+    Du bist das 'Tyrannus Visual Lab', ein professioneller Art Director.
     AKTUELLER MODUS: {st.session_state.mode}
-    REGELN:
-    1. Nutze KEINE technischen Fachbegriffe, sondern Metaphern.
-    2. Bestätige Antworten kurz ("Verstanden."), wiederhole NICHTS.
-    3. Nach 3-4 Fragen beende das Interview.
+    
+    TONALITÄT:
+    - Professionell, clean, "Agency-Style".
+    - Keine Metaphern ("Samen", "Reise"). Sei direkt.
+    - Du lieferst Bild-Konzepte für HINTERGRÜNDE, keinen fertigen Text.
+    - Achte immer auf "Negative Space" (Platz für Text).
+    
+    ABLAUF:
+    1. Stelle 1-2 präzise Fragen (Zielgruppe, Vibe, Format).
+    2. Schlage ein Bildkonzept vor (Farben, Licht, Motiv).
+    3. Beende das Gespräch, wenn das Konzept steht.
     """
     
     if st.session_state.mode == "IDENTITY_SCAN":
-        SPECIFIC_INSTRUCTION = "ZIEL: Erfasse die tiefe geistliche DNA der Gemeinde. Frage nach Gefühlen und Vergleichen."
+        SPECIFIC_INSTRUCTION = "FOKUS: Visuelle DNA. Moodboard-Style. Farben & Licht."
     elif st.session_state.mode == "PROJECT_DESIGN":
-        SPECIFIC_INSTRUCTION = "ZIEL: Konzept für ein KONKRETES Projekt (Flyer, Plakat). Frage nach Thema, Zielgruppe, Stimmung."
+        SPECIFIC_INSTRUCTION = "FOKUS: Konkretes Asset (Flyer). Welches Motiv dient als Hintergrund?"
     elif st.session_state.mode == "BRAINSTORMING":
-        SPECIFIC_INSTRUCTION = "ZIEL: Brainstorming für Jahresthema/Ideen. Frage nach Zielen und biblischen Bildern."
+        SPECIFIC_INSTRUCTION = "FOKUS: Ideenfindung. Moderne Metaphern, nicht kitschig."
     
-    FULL_SYSTEM_PROMPT = BASE_INSTRUCTION + SPECIFIC_INSTRUCTION
+    FULL_SYSTEM_PROMPT = BASE_INSTRUCTION + "\n" + SPECIFIC_INSTRUCTION
 
+    # Chat Anzeige
     for msg in st.session_state.chat_history:
         role = "assistant" if msg["role"] == "model" else "user"
         with st.chat_message(role):
             st.write(msg["parts"][0]["text"])
 
+    # Start-Trigger
     if not st.session_state.chat_history:
         if st.session_state.mode == "IDENTITY_SCAN":
-            welcome = "Modus: DNA-Analyse.\nLass uns den Kern deiner Gemeinde finden. Beschreibe mir kurz eure Gemeinschaft."
+            welcome = "Modus: DNA-Analyse.\nLass uns den Look definieren. Beschreibe den Charakter der Gemeinde (Modern, Klassisch, Laut, Still)?"
         elif st.session_state.mode == "PROJECT_DESIGN":
-            welcome = "Modus: Projekt-Design.\nWas steht an? Ein Flyer, ein Predigt-Cover oder ein Event-Bild?"
+            welcome = "Modus: Projekt-Design.\nWas steht an (Flyer, Post)? Und welche Stimmung soll das Bild transportieren?"
         else:
-            welcome = "Modus: Brainstorming.\nLass uns kreativ werden. Wonach suchen wir heute? (Jahresthema, Predigtreihe...)"
+            welcome = "Modus: Brainstorming.\nWelches Thema möchtest du visuell übersetzen?"
         st.session_state.chat_history.append({"role": "model", "parts": [{"text": welcome}]})
         st.rerun()
 
+    # Input Logic
     if not st.session_state.finished:
-        if user_input := st.chat_input("Deine Antwort..."):
+        if user_input := st.chat_input("Antwort eingeben..."):
             st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_input}]})
             with st.chat_message("assistant"):
-                with st.spinner("Architect sucht freie Leitung..."):
+                with st.spinner("..."):
                     response = call_gemini(st.session_state.chat_history, FULL_SYSTEM_PROMPT)
                     if "SYSTEM OVERLOAD" in response:
                         st.error(response)
                     else:
                         st.write(response)
                         st.session_state.chat_history.append({"role": "model", "parts": [{"text": response}]})
-            if len(st.session_state.chat_history) >= 9:
+            if len(st.session_state.chat_history) >= 11: 
                 st.session_state.finished = True
                 st.rerun()
 
+    # ERGEBNIS OUTPUT (Clean Style)
     if st.session_state.finished:
-        if st.button("Neues Projekt starten"):
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("NEUSTART", key="reset_btn"):
              st.session_state.chat_history = []
              st.session_state.finished = False
              st.session_state.mode = None
              st.rerun()
 
-        st.success("Konzept finalisiert. Generiere Daten...")
-        if st.button("Ergebnisse anzeigen"):
-            with st.spinner("Rendere Prompt..."):
-                analysis_prompt = """
-                Erstelle ein JSON mit genau zwei Feldern:
-                1. 'human_vision': Eine kraftvolle deutsche Zusammenfassung des Konzepts.
-                2. 'ai_prompt': Ein perfekter englischer Bild-Prompt für 'Gemini 3 Pro Image'. 
-                   - Natural Language. Photorealistic description.
-                   - Beginne mit: "A high resolution image of..."
-                """
-                temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
-                dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
-                
-                if "SYSTEM OVERLOAD" in dna_json:
-                     st.error(dna_json)
-                else:
-                    try:
-                        dna = json.loads(dna_json)
-                        st.markdown(f"""
-                        <div class="dna-box">
-                            <p class="label">VISION / KONZEPT</p>
-                            <div class="human-vision">"{dna.get('human_vision', 'Processing...')}"</div>
-                            <br><hr style="border-color:#333"><br>
-                            <p class="label">GEMINI 3 PRO IMAGE PROMPT</p>
-                            <code style="background-color:#111; color:#0f0; display:block; padding:15px; white-space: pre-wrap;">
-{dna.get('ai_prompt', 'Generating prompt...')}
-                            </code>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    except Exception:
-                        st.error("Datenfehler.")
+        with st.spinner("Erstelle Blueprint..."):
+            analysis_prompt = """
+            Erstelle ein JSON mit zwei Feldern:
+            1. 'human_vision': Zusammenfassung des Bildkonzepts (Deutsch). Erwähne Platzhalter für Text.
+            2. 'ai_prompt': Englischer Prompt für Midjourney/Gemini (Photorealistic, clean, negative space).
+            """
+            temp_history = st.session_state.chat_history + [{"role": "user", "parts": [{"text": analysis_prompt}]}]
+            dna_json = call_gemini(temp_history, "JSON Output only.", json_mode=True)
+            
+            if "SYSTEM" not in dna_json:
+                try:
+                    dna = json.loads(dna_json)
+                    # HIER IST DAS NEUE DESIGN DER ERGEBNIS-BOX
+                    st.markdown(f"""
+                    <div class="dna-box">
+                        <span class="label">VISUELLES KONZEPT</span>
+                        <div class="human-vision">{dna.get('human_vision', '...')}</div>
+                        <br>
+                        <span class="label">KI-PROMPT (COPY & PASTE)</span>
+                        <div class="prompt-code">{dna.get('ai_prompt', '...')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                except Exception:
+                    st.error("Fehler bei der Datenausgabe.")
